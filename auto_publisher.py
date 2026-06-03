@@ -313,10 +313,11 @@ Return ONLY a valid JSON object (no markdown, no backticks):
 AFFILIATE_LINKS = {
     "Groww":   "https://groww.in/invite/ARYOZB",
     "groww":   "https://groww.in/invite/ARYOZB",
+    "Amazon":  "https://www.amazon.in/?tag=wealthmarg-21",
+    "amazon":  "https://www.amazon.in/?tag=wealthmarg-21",
     # Add more below when you get them:
     # "Zerodha": "https://zerodha.com/open-account?c=YOURCODE",
     # "Upstox":  "https://upstox.com/open-account/?f=YOURCODE",
-    # "Amazon":  "https://www.amazon.in/?tag=YOURTAG",
 }
 
 
