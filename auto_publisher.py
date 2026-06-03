@@ -306,6 +306,34 @@ Return ONLY a valid JSON object (no markdown, no backticks):
 
 
 # =============================================================================
+# Affiliate Link Injection — Auto-embeds referral links into every article
+# =============================================================================
+# Add your affiliate links here. They will be automatically embedded
+# into every article the robot publishes.
+AFFILIATE_LINKS = {
+    "Groww":   "https://groww.in/invite/ARYOZB",
+    "groww":   "https://groww.in/invite/ARYOZB",
+    # Add more below when you get them:
+    # "Zerodha": "https://zerodha.com/open-account?c=YOURCODE",
+    # "Upstox":  "https://upstox.com/open-account/?f=YOURCODE",
+    # "Amazon":  "https://www.amazon.in/?tag=YOURTAG",
+}
+
+
+def inject_affiliate_links(html_content):
+    """Replace brand mentions with affiliate links in HTML content."""
+    import re
+    for brand, url in AFFILIATE_LINKS.items():
+        # Only link the FIRST occurrence of each brand to avoid over-linking
+        pattern = rf'(?<!["\'>])({re.escape(brand)})(?![^<]*>)(?![^<]*</a>)'
+        replacement = rf'<a href="{url}" target="_blank" rel="nofollow sponsored">\1</a>'
+        html_content = re.sub(pattern, replacement, html_content, count=1)
+    return html_content
+
+
+
+
+# =============================================================================
 # WordPress — Simple REST API publisher (no OAuth needed!)
 # =============================================================================
 def get_or_create_wp_tag(tag_name, headers):
@@ -429,7 +457,9 @@ def run_publish_workflow():
         # --- Step 4: Publish to WordPress ---
         state_manager.update_step(4, "running", "Publishing post to WordPress...")
         full_content = html_content + '\n\n<hr><p style="font-size:12px;color:#999;">This article may contain affiliate links.</p>'
+        full_content = inject_affiliate_links(full_content)   # 💰 embed affiliate links
         post = publish_to_wordpress(title, full_content, labels)
+
         article_url = post.get("url", "")
         published_date = datetime.now(IST).strftime("%Y-%m-%d")
         state_manager.update_step(4, "success", f"Published to WordPress! → {article_url}")
