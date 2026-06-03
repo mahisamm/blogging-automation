@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WealthMarg Auto Publisher | Live Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <style>
+    :root {
+      --bg: #060b18;
+      --surface: #0d1526;
+      --surface-2: #131f35;
+      --border: rgba(255,255,255,0.07);
+      --border-bright: rgba(255,255,255,0.14);
+      --text: #e8edf5;
+      --muted: #6b7a99;
+      --primary: #6366f1;
+      --primary-glow: rgba(99,102,241,0.35);
+      --success: #22c55e;
+      --success-glow: rgba(34,197,94,0.25);
+      --danger: #ef4444;
+      --danger-glow: rgba(239,68,68,0.25);
+      --warning: #f59e0b;
+      --connector: rgba(99,102,241,0.3);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 80% 40% at 50% -10%, rgba(99,102,241,0.12), transparent),
+        radial-gradient(ellipse 40% 60% at 90% 80%, rgba(34,197,94,0.05), transparent);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    .container { max-width: 820px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 2.5rem;
+    }
+    .brand-logo {
+      display: flex; align-items: center; gap: 0.9rem;
+    }
+    .logo-icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem; color: white;
+      box-shadow: 0 0 24px rgba(99,102,241,0.45);
+    }
+    h1 {
+      font-family: 'Outfit', sans-serif; font-size: 1.6rem; font-weight: 700;
+      background: linear-gradient(to right, #fff 30%, #a5b4fc);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .brand-sub { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+    /* ── Status Bar ── */
+    #status-bar {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.5rem 1rem; border-radius: 30px;
+      border: 1px solid var(--border-bright);
+      background: var(--surface-2);
+      font-size: 0.85rem; font-weight: 500;
+      transition: all 0.4s ease;
+    }
+    #status-bar.idle { color: var(--muted); }
+    #status-bar.running {
+      color: var(--primary); border-color: var(--primary);
+      box-shadow: 0 0 16px var(--primary-glow);
+    }
+    #status-bar.done {
+      color: var(--success); border-color: var(--success);
+      box-shadow: 0 0 16px var(--success-glow);
+    }
+    #status-bar.failed {
+      color: var(--danger); border-color: var(--danger);
+      box-shadow: 0 0 16px var(--danger-glow);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor;
+    }
+    .status-dot.pulse { animation: pulse 1.5s infinite; }
+    @keyframes pulse {
+      0%, 100% { transform: scale(0.85); opacity: 0.7; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+
+    /* ── Run Button ── */
+    #run-btn {
+      display: flex; align-items: center; gap: 0.55rem;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white; border: none;
+      padding: 0.65rem 1.5rem; border-radius: 10px;
+      font-size: 0.95rem; font-weight: 600; cursor: pointer;
+      box-shadow: 0 4px 20px var(--primary-glow);
+      transition: all 0.25s ease;
+      font-family: 'Inter', sans-serif;
+    }
+    #run-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px var(--primary-glow);
+    }
+    #run-btn:disabled {
+      opacity: 0.5; cursor: not-allowed; transform: none;
+    }
+
+    /* ── Stats Row ── */
+    .stats-row {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 1rem; margin-bottom: 2.5rem;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 1.2rem 1rem;
+      display: flex; align-items: center; gap: 0.9rem;
+    }
+    .stat-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem;
+    }
+    .stat-icon.purple { background: rgba(99,102,241,0.12); color: #818cf8; }
+    .stat-icon.green { background: rgba(34,197,94,0.12); color: var(--success); }
+    .stat-icon.blue { background: rgba(59,130,246,0.12); color: #60a5fa; }
+    .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-value { font-family: 'Outfit', sans-serif; font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+
+    /* ── Workflow Canvas ── */
+    .workflow-title {
+      font-family: 'Outfit', sans-serif; font-size: 1.05rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 1.5rem;
+    }
+
+    .workflow-canvas {
+      position: relative;
+      display: flex; flex-direction: column; gap: 0;
+    }
+
+    /* Connector line */
+    .connector {
+      width: 2px; height: 28px;
+      background: linear-gradient(to bottom, var(--connector), transparent);
+      margin-left: 30px;
+      position: relative; z-index: 1;
+    }
+    .connector.active-line {
+      background: linear-gradient(to bottom, var(--primary), var(--connector));
+      animation: flowDown 1s infinite linear;
+    }
+    .connector.done-line {
+      background: linear-gradient(to bottom, var(--success), var(--connector));
+    }
+    @keyframes flowDown {
+      0% { opacity: 0.4; }
+      50% { opacity: 1; }
+      100% { opacity: 0.4; }
+    }
+
+    /* Node Card */
+    .node {
+      display: flex; align-items: flex-start; gap: 1.2rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 1.2rem 1.4rem;
+      position: relative; z-index: 2;
+      transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    .node.pending { opacity: 0.55; }
+    .node.running {
+      opacity: 1;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 1px var(--primary), 0 8px 32px var(--primary-glow);
+      transform: translateX(4px);
+    }
+    .node.success {
+      opacity: 1;
+      border-left: 3px solid var(--success);
+      background: linear-gradient(90deg, rgba(34,197,94,0.05), var(--surface));
+    }
+    .node.error {
+      opacity: 1;
+      border-color: var(--danger);
+      box-shadow: 0 0 0 1px var(--danger), 0 8px 32px var(--danger-glow);
+    }
+
+    /* Node icon circle */
+    .node-icon {
+      width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; border: 2px solid var(--border);
+      background: var(--surface-2);
+      transition: all 0.35s ease;
+    }
+    .node.pending .node-icon { color: var(--muted); }
+    .node.running .node-icon {
+      border-color: var(--primary); background: rgba(99,102,241,0.1);
+      color: var(--primary); box-shadow: 0 0 16px var(--primary-glow);
+    }
+    .node.success .node-icon {
+      border-color: var(--success); background: rgba(34,197,94,0.1); color: var(--success);
+    }
+    .node.error .node-icon {
+      border-color: var(--danger); background: rgba(239,68,68,0.1); color: var(--danger);
+    }
+
+    /* Spinner for running node */
+    .spinner-ring {
+      position: absolute; inset: -3px; border-radius: 14px;
+      border: 2px solid transparent;
+      border-top-color: var(--primary);
+      animation: spin 0.9s linear infinite;
+      display: none;
+    }
+    .node.running .spinner-ring { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .node-body { flex: 1; min-width: 0; }
+    .node-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem; }
+    .node-name {
+      font-weight: 600; font-size: 1rem;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .node-badge {
+      font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.6rem;
+      border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .badge-pending { background: rgba(107,122,153,0.15); color: var(--muted); }
+    .badge-running { background: rgba(99,102,241,0.15); color: #818cf8; animation: badgePulse 1s infinite; }
+    .badge-success { background: rgba(34,197,94,0.15); color: var(--success); }
+    .badge-error { background: rgba(239,68,68,0.15); color: var(--danger); }
+    @keyframes badgePulse {
+      0%, 100% { opacity: 0.8; } 50% { opacity: 1; }
+    }
+
+    .node-detail {
+      font-size: 0.85rem; color: var(--muted); line-height: 1.5;
+      font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 580px;
+    }
+    .node.running .node-detail { color: #a5b4fc; }
+    .node.success .node-detail { color: #86efac; }
+    .node.error .node-detail { color: #fca5a5; }
+
+    /* Loading dots animation for running state */
+    .loading-dots::after {
+      content: '';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0%, 20%   { content: ''; }
+      40%       { content: '.'; }
+      60%       { content: '..'; }
+      80%, 100% { content: '...'; }
+    }
+
+    /* Progress bar */
+    .node-progress {
+      height: 3px; background: rgba(99,102,241,0.12);
+      border-radius: 3px; margin-top: 0.7rem; overflow: hidden;
+      display: none;
+    }
+    .node.running .node-progress { display: block; }
+    .node-progress-bar {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--primary), #8b5cf6);
+      border-radius: 3px;
+      animation: progressPulse 2s ease-in-out infinite;
+    }
+    @keyframes progressPulse {
+      0% { width: 5%; opacity: 1; }
+      50% { width: 85%; opacity: 0.8; }
+      100% { width: 95%; opacity: 1; }
+    }
+
+    /* ── Error Box ── */
+    #error-box {
+      background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.3);
+      border-left: 4px solid var(--danger);
+      border-radius: 12px; padding: 1rem 1.2rem;
+      margin-bottom: 2rem; display: none;
+    }
+    #error-box h4 { color: var(--danger); margin-bottom: 0.5rem; font-size: 0.9rem; }
+    #error-box pre {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+      color: #fca5a5; white-space: pre-wrap; word-break: break-all;
+    }
+
+    /* ── Last Run Summary ── */
+    #summary-box {
+      background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.2);
+      border-left: 4px solid var(--success);
+      border-radius: 12px; padding: 1.2rem 1.4rem;
+      margin-bottom: 2rem; display: none;
+    }
+    #summary-box h4 { color: var(--success); margin-bottom: 0.6rem; font-size: 0.95rem; }
+    #summary-box p { font-size: 0.88rem; color: #a7f3d0; line-height: 1.7; }
+    #summary-box a { color: #6ee7b7; }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 3rem; text-align: center; color: var(--muted); font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="brand-logo">
+      <div class="logo-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+      <div>
+        <h1>WealthMarg Publisher</h1>
+        <div class="brand-sub">Autonomous AI Blog Workflow</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;">
+      <div id="status-bar" class="idle">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Idle</span>
+      </div>
+      <button id="run-btn" onclick="triggerRun()">
+        <i class="fa-solid fa-play"></i> Run Now
+      </button>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-icon purple"><i class="fa-solid fa-bolt-lightning"></i></div>
+      <div>
+        <div class="stat-label">Workflow</div>
+        <div class="stat-value" style="font-size:1rem;padding-top:2px" id="stat-workflow">WealthMarg Publisher</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><i class="fa-solid fa-check-double"></i></div>
+      <div>
+        <div class="stat-label">Total Steps</div>
+        <div class="stat-value">5</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon blue"><i class="fa-solid fa-clock"></i></div>
+      <div>
+        <div class="stat-label">Last Updated</div>
+        <div class="stat-value" style="font-size:0.85rem;padding-top:4px" id="stat-time">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Box -->
+  <div id="error-box">
+    <h4><i class="fa-solid fa-circle-exclamation"></i> Workflow Error</h4>
+    <pre id="error-text"></pre>
+  </div>
+
+  <!-- Success Summary -->
+  <div id="summary-box">
+    <h4><i class="fa-solid fa-circle-check"></i> Run Completed Successfully</h4>
+    <p id="summary-text"></p>
+  </div>
+
+  <!-- Workflow Canvas -->
+  <div class="workflow-title">
+    <i class="fa-solid fa-diagram-project" style="margin-right:0.4rem;color:var(--primary)"></i>
+    Live Workflow Execution
+  </div>
+
+  <div class="workflow-canvas" id="canvas">
+    <!-- Steps injected by JS -->
+  </div>
+
+</div>
+
+<footer>WealthMarg Auto Publisher &nbsp;•&nbsp; Polling every 800ms</footer>
+
+<script>
+  const STEP_ICONS = {
+    1: 'fa-table-list',
+    2: 'fa-robot',
+    3: 'fa-tags',
+    4: 'fa-blog',
+    5: 'fa-file-circle-check'
+  };
+  const STEP_SUBTITLES = {
+    1: 'Google Sheets → Read pending topic',
+    2: 'Gemini AI → Write 1500+ word article',
+    3: 'Gemini AI → SEO title, description & tags',
+    4: 'Blogger API → Publish live post',
+    5: 'Google Sheets → Mark published & log'
+  };
+
+  let lastState = null;
+  let completedOnce = false;
+
+  function badgeLabel(status) {
+    return { pending: 'Waiting', running: 'Running', success: 'Done', error: 'Error' }[status] || status;
+  }
+
+  function renderCanvas(steps) {
+    const canvas = document.getElementById('canvas');
+    let html = '';
+    steps.forEach((step, idx) => {
+      const isRunning = step.status === 'running';
+      const isDone = step.status === 'success';
+      const isError = step.status === 'error';
+
+      const iconName = isDone ? 'fa-check' : isError ? 'fa-xmark' : STEP_ICONS[step.id];
+      const detail = step.details || STEP_SUBTITLES[step.id];
+      const detailClass = isRunning ? 'node-detail loading-dots' : 'node-detail';
+
+      html += `
+        <div class="node ${step.status}" id="node-${step.id}">
+          <div style="position:relative;width:44px;height:44px;flex-shrink:0">
+            <div class="node-icon">
+              <i class="fa-solid ${iconName}"></i>
+            </div>
+            <div class="spinner-ring"></div>
+          </div>
+          <div class="node-body">
+            <div class="node-header">
+              <span class="node-name">${step.name}</span>
+              <span class="node-badge badge-${step.status}">${badgeLabel(step.status)}</span>
+            </div>
+            <div class="${detailClass}">${detail}</div>
+            <div class="node-progress"><div class="node-progress-bar"></div></div>
+          </div>
+        </div>`;
+
+      if (idx < steps.length - 1) {
+        const lineClass = isDone ? 'done-line' : isRunning ? 'active-line' : '';
+        html += `<div class="connector ${lineClass}"></div>`;
+      }
+    });
+    canvas.innerHTML = html;
+  }
+
+  function updateStatusBar(state) {
+    const bar = document.getElementById('status-bar');
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    const btn = document.getElementById('run-btn');
+
+    if (state.is_running) {
+      bar.className = 'running'; dot.className = 'status-dot pulse';
+      txt.textContent = 'Workflow Running...'; btn.disabled = true;
+    } else {
+      const hasError = state.last_error && state.last_error.length > 0;
+      const anySuccess = state.steps.some(s => s.status === 'success');
+      if (hasError) {
+        bar.className = 'failed'; dot.className = 'status-dot';
+        txt.textContent = 'Failed'; btn.disabled = false;
+      } else if (anySuccess) {
+        bar.className = 'done'; dot.className = 'status-dot';
+        txt.textContent = 'Completed ✓'; btn.disabled = false;
+      } else {
+        bar.className = 'idle'; dot.className = 'status-dot';
+        txt.textContent = 'Idle'; btn.disabled = false;
+      }
+    }
+  }
+
+  function updateErrorBox(state) {
+    const box = document.getElementById('error-box');
+    const txt = document.getElementById('error-text');
+    if (state.last_error && !state.is_running) {
+      box.style.display = 'block';
+      txt.textContent = state.last_error;
+    } else {
+      box.style.display = 'none';
+    }
+  }
+
+  function updateSummaryBox(state) {
+    const box = document.getElementById('summary-box');
+    const txt = document.getElementById('summary-text');
+    const allSuccess = state.steps.every(s => s.status === 'success');
+    if (allSuccess && !state.is_running) {
+      const publishStep = state.steps.find(s => s.id === 4);
+      const url = publishStep?.details?.replace('Published! → ', '') || '';
+      box.style.display = 'block';
+      txt.innerHTML = `Article published successfully!<br>${url ? `<a href="${url}" target="_blank">${url}</a>` : ''}`;
+    } else {
+      box.style.display = 'none';
+    }
+  }
+
+  function updateTime(state) {
+    if (state.last_updated) {
+      const d = new Date(state.last_updated);
+      document.getElementById('stat-time').textContent =
+        d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+  }
+
+  async function fetchStatus() {
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) return;
+      const state = await res.json();
+
+      renderCanvas(state.steps);
+      updateStatusBar(state);
+      updateErrorBox(state);
+      updateSummaryBox(state);
+      updateTime(state);
+
+      lastState = state;
+    } catch (e) {
+      console.warn('Could not reach /api/status:', e.message);
+    }
+  }
+
+  async function triggerRun() {
+    const btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    document.getElementById('error-box').style.display = 'none';
+    document.getElementById('summary-box').style.display = 'none';
+    try {
+      const res = await fetch('/api/trigger', { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) {
+        alert('Could not start: ' + data.message);
+        btn.disabled = false;
+      } else {
+        // Poll immediately
+        setTimeout(fetchStatus, 300);
+      }
+    } catch (e) {
+      alert('Server not reachable. Make sure server.py is running.');
+      btn.disabled = false;
+    }
+  }
+
+  // Initial render with empty pending steps
+  renderCanvas([
+    { id:1, name:'Read Pending Topic', status:'pending', details:'' },
+    { id:2, name:'Generate Article (Gemini)', status:'pending', details:'' },
+    { id:3, name:'Generate SEO Metadata', status:'pending', details:'' },
+    { id:4, name:'Publish to Blogger', status:'pending', details:'' },
+    { id:5, name:'Update Google Sheets', status:'pending', details:'' }
+  ]);
+
+  // Poll every 800ms
+  setInterval(fetchStatus, 800);
+  fetchStatus();
+</script>
+</body>
+</html>
