@@ -280,7 +280,13 @@ Write a 1500+ word blog article with STRICT rules:
 
 WRITE THE ARTICLE NOW:"""
     log.info(f"Generating article for: {topic}")
-    return call_ai(prompt)
+    raw_html = call_ai(prompt)
+    # Clean up markdown code block wrappers if the AI included them
+    if raw_html.startswith("```html"):
+        raw_html = raw_html[7:]
+    if raw_html.endswith("```"):
+        raw_html = raw_html[:-3]
+    return raw_html.strip()
 
 
 def generate_seo_metadata(topic):
