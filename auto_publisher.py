@@ -314,8 +314,6 @@ Return ONLY a valid JSON object (no markdown, no backticks):
 # =============================================================================
 # Affiliate Link Injection — Auto-embeds referral links into every article
 # =============================================================================
-# Add your affiliate links here. They will be automatically embedded
-# into every article the robot publishes.
 AFFILIATE_LINKS = {
     "Groww":   "https://groww.in/invite/ARYOZB",
     "groww":   "https://groww.in/invite/ARYOZB",
@@ -338,30 +336,32 @@ def inject_affiliate_links(html_content):
     return html_content
 
 
-
-
 # =============================================================================
-# WordPress — Simple REST API publisher (no OAuth needed!)
+# WordPress — REST API publisher with retry on connection errors
 # =============================================================================
-def get_or_create_wp_tag(tag_name, headers):
+def get_or_create_wp_tag(tag_name, headers, max_retries=3):
     """Get existing tag ID or create new one. Returns tag ID."""
     base = f"{config.WP_URL}/wp-json/wp/v2/tags"
-    # Try to find existing tag
-    r = requests.get(base, headers=headers, params={"search": tag_name}, timeout=30)
-    if r.status_code == 200 and r.json():
-        return r.json()[0]["id"]
-    # Create new tag
-    r = requests.post(base, headers=headers, json={"name": tag_name}, timeout=30)
-    if r.status_code == 201:
-        return r.json()["id"]
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(base, headers=headers, params={"search": tag_name}, timeout=30)
+            if r.status_code == 200 and r.json():
+                return r.json()[0]["id"]
+            r2 = requests.post(base, headers=headers, json={"name": tag_name}, timeout=30)
+            if r2.status_code == 201:
+                return r2.json()["id"]
+            return None
+        except requests.exceptions.ConnectionError as e:
+            log.warning(f"Tag lookup connection error (attempt {attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(10)
     return None
 
 
-def publish_to_wordpress(title, content, tags=None):
-    """Publish a post to WordPress using Application Password. No OAuth needed!"""
+def publish_to_wordpress(title, content, tags=None, max_retries=3):
+    """Publish a post to WordPress using Application Password with retry logic."""
     import base64
 
-    # Build auth header from Application Password
     credentials = f"{config.WP_USERNAME}:{config.WP_APP_PASSWORD}"
     token = base64.b64encode(credentials.encode()).decode("utf-8")
     headers = {
@@ -376,49 +376,40 @@ def publish_to_wordpress(title, content, tags=None):
         if tag_id:
             tag_ids.append(tag_id)
 
-    # Create the post
     payload = {
         "title": title,
         "content": content,
-        "status": "publish",   # publish immediately
+        "status": "publish",
         "tags": tag_ids,
         "format": "standard",
     }
 
     log.info(f"Publishing to WordPress: {config.WP_URL}")
-    response = requests.post(
-        f"{config.WP_URL}/wp-json/wp/v2/posts",
-        headers=headers,
-        json=payload,
-        timeout=60,
-    )
-
-    if response.status_code == 201:
-        post_data = response.json()
-        post_url = post_data.get("link", config.WP_URL)
-        post_id = post_data.get("id", "")
-        log.info(f"[WordPress] Published successfully! URL: {post_url}")
-        return {"url": post_url, "id": post_id, "title": title}
-    else:
-        raise Exception(
-            f"WordPress API returned {response.status_code}: {response.text[:400]}"
-        )
-
-
-# =============================================================================
-# Telegram
-# =============================================================================
-def send_telegram_message(message):
-    if not config.TELEGRAM_BOT_TOKEN:
-        log.warning("No Telegram token configured.")
-        return
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
-    try:
-        resp = requests.post(url, json={"chat_id": config.TELEGRAM_CHAT_ID, "text": message}, timeout=30)
-        resp.raise_for_status()
-        log.info("Telegram message sent.")
-    except Exception as e:
-        log.error(f"Telegram error: {e}")
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                f"{config.WP_URL}/wp-json/wp/v2/posts",
+                headers=headers,
+                json=payload,
+                timeout=60,
+            )
+            if response.status_code == 201:
+                post_data = response.json()
+                post_url = post_data.get("link", config.WP_URL)
+                post_id = post_data.get("id", "")
+                log.info(f"[WordPress] Published successfully! URL: {post_url}")
+                return {"url": post_url, "id": post_id, "title": title}
+            else:
+                raise Exception(
+                    f"WordPress API returned {response.status_code}: {response.text[:400]}"
+                )
+        except requests.exceptions.ConnectionError as e:
+            log.warning(f"WordPress connection error (attempt {attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                log.info(f"Retrying in 15 seconds...")
+                time.sleep(15)
+            else:
+                raise Exception(f"WordPress publish failed after {max_retries} attempts: {e}")
 
 
 # =============================================================================
@@ -432,7 +423,7 @@ def run_publish_workflow():
     state_manager.start_run()
 
     try:
-        # --- Auth (Google Sheets only now) ---
+        # --- Auth (Google Sheets only) ---
         creds = get_google_credentials()
         sheets_service = build("sheets", "v4", credentials=creds)
 
@@ -464,7 +455,7 @@ def run_publish_workflow():
         # --- Step 4: Publish to WordPress ---
         state_manager.update_step(4, "running", "Publishing post to WordPress...")
         full_content = html_content + '\n\n<hr><p style="font-size:12px;color:#999;">This article may contain affiliate links.</p>'
-        full_content = inject_affiliate_links(full_content)   # 💰 embed affiliate links
+        full_content = inject_affiliate_links(full_content)
         post = publish_to_wordpress(title, full_content, labels)
 
         article_url = post.get("url", "")
@@ -481,11 +472,6 @@ def run_publish_workflow():
         log.info(f"✅ Workflow complete! Published: {title}")
         log.info(f"   URL: {article_url}")
 
-        # Send Telegram success
-        send_telegram_message(
-            f"✅ WealthMarg Published!\n\n📝 {title}\n🔗 {article_url}\n📊 {word_count} words"
-        )
-
     except Exception as e:
         import traceback
         err = traceback.format_exc()
@@ -494,22 +480,22 @@ def run_publish_workflow():
 
 
 # =============================================================================
-# Daily Report
+# Daily Report (no Telegram — logs to file only)
 # =============================================================================
 def run_daily_report():
-    log.info("Running daily Telegram report...")
-    creds = get_google_credentials()
-    sheets_service = build("sheets", "v4", credentials=creds)
-    articles = read_all_articles(sheets_service)
-    today_str = datetime.now(IST).strftime("%Y-%m-%d")
-    today_articles = [a for a in articles if (a.get("PublishedDate", "") or "").startswith(today_str)]
-    count = len(today_articles)
-
-    msg = f"📊 WealthMarg Daily Report\n📅 {today_str}\n📝 Articles published today: {count}\n\n"
-    for art in today_articles:
-        msg += f"✅ {art.get('Topic','')}\n🔗 {art.get('ArticleURL','')}\n\n"
-    msg += "Keep publishing! 🚀"
-    send_telegram_message(msg)
+    log.info("Running daily report...")
+    try:
+        creds = get_google_credentials()
+        sheets_service = build("sheets", "v4", credentials=creds)
+        articles = read_all_articles(sheets_service)
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        today_articles = [a for a in articles if (a.get("PublishedDate", "") or "").startswith(today_str)]
+        count = len(today_articles)
+        log.info(f"Daily Report — {today_str}: {count} articles published today")
+        for art in today_articles:
+            log.info(f"  ✅ {art.get('Topic','')} → {art.get('ArticleURL','')}")
+    except Exception as e:
+        log.error(f"Daily report failed: {e}")
 
 
 def run_burst_then_schedule():
@@ -534,12 +520,11 @@ def run_burst_then_schedule():
             time.sleep(delay)
 
     log.info("Burst complete! Switching to 1 article/hour schedule.")
-    send_telegram_message(f"✅ Burst complete! Published {burst} articles.\nNow running 1 article/hour automatically.")
 
     # Schedule 1 per hour at :00
     schedule.every().hour.at(":00").do(_scheduled_publish)
 
-    # Daily report at 9 PM
+    # Daily report at 9 PM IST
     schedule.every().day.at(f"{config.REPORT_HOUR:02d}:00").do(run_daily_report)
 
     log.info("Hourly scheduler started. Press Ctrl+C to stop.")
@@ -562,15 +547,11 @@ if __name__ == "__main__":
     import schedule
 
     parser = argparse.ArgumentParser(description="WealthMarg Auto Blog Publisher")
-    parser.add_argument("--auth", action="store_true", help="Run Google OAuth login only")
-    parser.add_argument("--test", action="store_true", help="Run one publish cycle now")
-    parser.add_argument("--burst", action="store_true", help="Burst 5 articles then run 1/hour")
-    parser.add_argument("--report", action="store_true", help="Send daily Telegram report now")
+    parser.add_argument("--auth",   action="store_true", help="Run Google OAuth login only")
+    parser.add_argument("--test",   action="store_true", help="Run one publish cycle now")
+    parser.add_argument("--burst",  action="store_true", help="Burst 5 articles then run 1/hour")
+    parser.add_argument("--report", action="store_true", help="Send daily report now")
     args = parser.parse_args()
-
-    if not config.GEMINI_API_KEYS:
-        print("ERROR: No GEMINI_API_KEYS configured in config.py")
-        sys.exit(1)
 
     if args.auth:
         get_google_credentials()
@@ -580,7 +561,6 @@ if __name__ == "__main__":
     elif args.report:
         run_daily_report()
     else:
-        # Default + --burst: burst 5 then 1/hour
+        # Default: burst 5 then 1/hour
         get_google_credentials()
         run_burst_then_schedule()
-
