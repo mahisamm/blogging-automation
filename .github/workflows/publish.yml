@@ -2,7 +2,7 @@ name: WealthMarg Auto Publisher
 
 on:
   schedule:
-    - cron: '0 * * * *'   # Every hour at :00 UTC (5:30 AM, 6:30 AM... IST)
+    - cron: '0 */2 * * *'  # Every 2 hours UTC (5:30, 7:30, 9:30... IST)
   workflow_dispatch:        # Manual "Run now" button on GitHub
 
 jobs:
@@ -35,5 +35,7 @@ jobs:
           GEMINI_API_KEYS:     ${{ secrets.GEMINI_API_KEYS }}
           GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          SPREADSHEET_ID:      ${{ secrets.SPREADSHEET_ID }}
+          SPREADSHEET_ID:       ${{ secrets.SPREADSHEET_ID }}
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python auto_publisher.py --test

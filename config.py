@@ -47,9 +47,10 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── Schedule ──────────────────────────────────────────────────────────────────
-BURST_COUNT         = 5   # articles to publish on first local run
-ARTICLES_PER_HOUR   = 1   # GitHub Actions publishes 1 per trigger
-BURST_DELAY_SECONDS = 30
+BURST_COUNT             = 5   # articles to publish on first local run
+PUBLISH_INTERVAL_HOURS  = int(os.environ.get("PUBLISH_INTERVAL_HOURS", "2"))
+REPORT_HOUR             = int(os.environ.get("REPORT_HOUR", "21"))
+BURST_DELAY_SECONDS     = 30
 
 # ── Google API Scopes ─────────────────────────────────────────────────────────
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]

@@ -264,21 +264,107 @@ def call_ai(prompt):
         return call_gemini_fallback(prompt)
 
 
+def send_telegram_message(text):
+    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+        log.info("Telegram not configured; skipping notification.")
+        return
+    try:
+        telegram_url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": config.TELEGRAM_CHAT_ID,
+            "text": text,
+        }
+        response = requests.post(telegram_url, json=payload, timeout=15)
+        response.raise_for_status()
+        log.info("Telegram notification sent.")
+    except Exception as e:
+        log.warning(f"Failed to send Telegram notification: {e}")
+
+
+def generate_new_topic(sheets_service):
+    existing_articles = read_all_articles(sheets_service)
+    existing_topics = [a.get("Topic", "") for a in existing_articles if a.get("Topic")]
+    example_list = "\n".join(f"- {topic}" for topic in existing_topics[:20])
+    if not example_list:
+        example_list = "- None"
+
+    prompt = f"""You are an expert Indian personal finance SEO content strategist.
+Suggest one new, unique, and clickworthy blog topic for Indian millennials and young adults (20-40 years old) about personal finance, investing, or money management.
+Avoid duplication of these existing topics:
+{example_list}
+Return only a single topic title on one line with no extra explanation."""
+    raw_topic = call_ai(prompt).strip()
+    topic_line = "\n".join([line.strip() for line in raw_topic.splitlines() if line.strip()])
+    topic = topic_line.splitlines()[0] if topic_line else ""
+    if not topic:
+        raise Exception("AI did not generate a valid new topic.")
+    return topic
+
+
+def append_pending_topic(sheets_service, topic):
+    result = sheets_service.spreadsheets().values().get(
+        spreadsheetId=config.SPREADSHEET_ID,
+        range=f"{config.PENDING_SHEET_NAME}!A:Z",
+    ).execute()
+    rows = result.get("values", [])
+    headers = rows[0] if rows else []
+    if headers:
+        new_row = ["" for _ in headers]
+        if "Topic" in headers:
+            new_row[headers.index("Topic")] = topic
+        if "Status" in headers:
+            new_row[headers.index("Status")] = "Pending"
+        if "PublishedDate" in headers:
+            new_row[headers.index("PublishedDate")] = ""
+        if "ArticleURL" in headers:
+            new_row[headers.index("ArticleURL")] = ""
+    else:
+        new_row = [topic, "Pending", "", ""]
+
+    sheets_service.spreadsheets().values().append(
+        spreadsheetId=config.SPREADSHEET_ID,
+        range=f"{config.PENDING_SHEET_NAME}!A:Z",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body={"values": [new_row]},
+    ).execute()
+
+    row_number = len(rows) + 1 if rows else 2
+    log.info(f"Appended AI-generated topic to Pending sheet at row {row_number}.")
+    return row_number
+
+
 # =============================================================================
 # Content Generation — uses call_ai() (Mistral → Gemini fallback)
 # =============================================================================
 def generate_article(topic):
-    prompt = f"""You are an expert SEO content writer for Indian personal finance.
+    prompt = f"""You are a top personal finance content writer for WealthMarg — India's trusted money guide for millennials (ages 20-40).
 
 TOPIC: {topic}
 
-Write a 1500+ word blog article with STRICT rules:
-1. FORMAT: Only HTML tags (h2, p, ul, li, ol, strong, em). NO markdown, NO doctype, NO body tags. Start directly with <h2> or <p>.
-2. STRUCTURE: Intro → 6 H2 sections → bullet list → numbered list → FAQ (5 Q&A) → Conclusion with CTA
-3. TONE: Conversational, for Indians 20-40, use 'you', mention Groww/Zerodha/Amazon where natural
-4. SEO: Use main keyword in first 100 words, 5-7 times total
+Write a 1500+ word blog article. Follow ALL rules exactly.
 
-WRITE THE ARTICLE NOW:"""
+CONTENT RULES:
+- Open with a powerful hook in the VERY FIRST sentence: a surprising stat, a relatable problem, or a bold question (e.g. "Did you know most Indians lose ₹1–2 lakh every year just by parking money in a savings account?")
+- Use REAL Indian context: SIP, PPF, FD, Nifty 50, SEBI, RBI, ₹ (always use ₹ not "Rs" or "INR"), Zerodha, Groww, UPI, tax-saving under 80C, etc.
+- Explain everything like a smart, honest friend — short sentences, zero jargon without a plain-English explanation immediately after
+- Use relatable analogies (compare SIP to a daily tea habit that builds wealth; compare insurance to a car airbag — you hope you never need it but you're glad it's there)
+- Give 3–5 specific, actionable steps the reader can take TODAY or THIS WEEK
+- Be encouraging and confidence-building — many Indian readers are first-generation investors who feel intimidated; make them feel capable
+
+FORMAT RULES (STRICT):
+- Use ONLY these HTML tags: <h2>, <p>, <ul>, <li>, <ol>, <strong>, <em>
+- NO markdown, NO ``` code fences, NO doctype, NO <html>/<head>/<body> tags
+- Start directly with a <p> (the hook) — do NOT start with <h2>
+- Structure: Hook intro (1–2 paragraphs) → 6 H2 sections with 2–3 paragraphs each → Key takeaways bullet list → Step-by-step numbered action plan → FAQ (5 Q&As with real questions Indians ask) → Conclusion with motivating CTA
+- Bold (<strong>) every important number, stat, deadline, or critical tip
+
+SEO RULES:
+- Use the main keyword naturally in the first 100 words
+- Repeat the keyword 5–7 times total throughout the article
+- Write H2 headings that are descriptive and benefit-driven (not generic like "Introduction" or "Conclusion")
+
+WRITE THE FULL ARTICLE NOW:"""
     log.info(f"Generating article for: {topic}")
     raw_html = call_ai(prompt)
     # Clean up markdown code block wrappers if the AI included them
@@ -431,13 +517,15 @@ def run_publish_workflow():
         state_manager.update_step(1, "running", "Querying Google Sheets for pending topics...")
         topic_data = read_pending_topic(sheets_service)
         if not topic_data:
-            state_manager.update_step(1, "success", "No pending topics found. Workflow skipped.")
-            state_manager.end_run()
-            return
-
-        topic = topic_data["Topic"]
-        row_number = topic_data["row_number"]
-        state_manager.update_step(1, "success", f"Found topic: \"{topic}\" (row {row_number})")
+            state_manager.update_step(1, "running", "No pending topics found. AI is generating a new topic...")
+            topic = generate_new_topic(sheets_service)
+            row_number = append_pending_topic(sheets_service, topic)
+            state_manager.update_step(1, "success", f"AI created new topic: \"{topic}\" (row {row_number})")
+            send_telegram_message(f"🤖 AI generated a new topic and started publishing:\n{topic}")
+        else:
+            topic = topic_data["Topic"]
+            row_number = topic_data["row_number"]
+            state_manager.update_step(1, "success", f"Found topic: \"{topic}\" (row {row_number})")
 
         # --- Step 2: Generate Article ---
         state_manager.update_step(2, "running", f"Writing 1500+ word article for: {topic}")
@@ -464,7 +552,10 @@ def run_publish_workflow():
 
         # --- Step 5: Update Sheets ---
         state_manager.update_step(5, "running", "Updating Google Sheets and logging article...")
-        update_sheet_published(sheets_service, row_number, article_url, published_date)
+        if row_number:
+            update_sheet_published(sheets_service, row_number, article_url, published_date)
+        else:
+            log.info("No pending row available; skipping Pending sheet update.")
         log_to_all_articles(sheets_service, topic, published_date, article_url, word_count)
         state_manager.update_step(5, "success", f"Sheet updated. Article logged to 'All Articles'.")
 
@@ -472,15 +563,24 @@ def run_publish_workflow():
         log.info(f"✅ Workflow complete! Published: {title}")
         log.info(f"   URL: {article_url}")
 
+        send_telegram_message(
+            f"✅ Article Published!\n\n"
+            f"📝 {title}\n"
+            f"🔗 {article_url}\n"
+            f"📊 {word_count} words\n"
+            f"🕐 {datetime.now(IST).strftime('%d %b %Y, %I:%M %p IST')}"
+        )
+
     except Exception as e:
         import traceback
         err = traceback.format_exc()
         log.error(f"Workflow failed: {err}")
+        send_telegram_message(f"❌ Publish workflow failed:\n{str(e)}")
         state_manager.end_run(error=str(e))
 
 
 # =============================================================================
-# Daily Report (no Telegram — logs to file only)
+# Daily Report
 # =============================================================================
 def run_daily_report():
     log.info("Running daily report...")
@@ -494,6 +594,11 @@ def run_daily_report():
         log.info(f"Daily Report — {today_str}: {count} articles published today")
         for art in today_articles:
             log.info(f"  ✅ {art.get('Topic','')} → {art.get('ArticleURL','')}")
+
+        send_telegram_message(
+            f"📊 Daily report for {today_str}: {count} articles published today.\n" +
+            "\n".join([f"- {art.get('Topic','')}\n{art.get('ArticleURL','')}" for art in today_articles[:5]])
+        )
     except Exception as e:
         log.error(f"Daily report failed: {e}")
 
@@ -508,7 +613,7 @@ def run_burst_then_schedule():
     delay = config.BURST_DELAY_SECONDS
 
     log.info("=" * 55)
-    log.info(f"BURST MODE: Publishing {burst} articles now, then 1/hour")
+    log.info(f"BURST MODE: Publishing {burst} articles now, then every {config.PUBLISH_INTERVAL_HOURS} hours")
     log.info("=" * 55)
 
     for i in range(burst):
@@ -519,12 +624,12 @@ def run_burst_then_schedule():
             log.info(f"Waiting {delay}s before next burst article...")
             time.sleep(delay)
 
-    log.info("Burst complete! Switching to 1 article/hour schedule.")
+    log.info(f"Burst complete! Switching to one article every {config.PUBLISH_INTERVAL_HOURS} hours.")
 
-    # Schedule 1 per hour at :00
-    schedule.every().hour.at(":00").do(_scheduled_publish)
+    # Schedule every N hours
+    schedule.every(config.PUBLISH_INTERVAL_HOURS).hours.do(_scheduled_publish)
 
-    # Daily report at 9 PM IST
+    # Daily report at configured hour
     schedule.every().day.at(f"{config.REPORT_HOUR:02d}:00").do(run_daily_report)
 
     log.info("Hourly scheduler started. Press Ctrl+C to stop.")
