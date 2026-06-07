@@ -42,6 +42,124 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 
 # =============================================================================
+# WordPress Pre-flight Connectivity Check
+# =============================================================================
+TEMP_HOSTINGER_DOMAIN = "hostingersite.com"
+
+
+def check_wordpress_connection():
+    """
+    Pre-flight check: verify site reachability, REST API, and auth.
+    Returns True if all checks pass, False otherwise.
+    Prints a formatted status table for --check-wp CLI mode.
+    """
+    import base64
+
+    wp_url = config.WP_URL.rstrip("/")
+
+    if TEMP_HOSTINGER_DOMAIN in wp_url:
+        log.warning(
+            "WARNING: WP_URL is still set to the temporary Hostinger domain: " + wp_url + "\n"
+            "   Update WP_URL in your .env and GitHub Secrets to: https://www.wealthmarg.com"
+        )
+
+    results = {}
+
+    # --- Check 1: Site reachable ---
+    try:
+        r = requests.get(wp_url, timeout=15, allow_redirects=True)
+        if r.status_code == 200:
+            results["site"] = ("OK", "200")
+        else:
+            results["site"] = ("FAIL", "HTTP " + str(r.status_code))
+    except requests.exceptions.ConnectionError:
+        results["site"] = ("FAIL", "DNS/connection error -- not reachable")
+    except requests.exceptions.Timeout:
+        results["site"] = ("FAIL", "Timeout after 15s")
+    except Exception as e:
+        results["site"] = ("FAIL", str(e)[:80])
+
+    # --- Check 2: REST API ---
+    try:
+        api_url = wp_url + "/wp-json/wp/v2/posts"
+        r = requests.get(api_url, timeout=15)
+        if r.status_code == 200:
+            try:
+                data = r.json()
+                if isinstance(data, list):
+                    results["rest_api"] = ("OK", "returned " + str(len(data)) + " posts")
+                else:
+                    results["rest_api"] = ("FAIL", "unexpected response: " + str(data)[:60])
+            except Exception:
+                results["rest_api"] = ("FAIL", "non-JSON response -- check permalinks")
+        elif r.status_code == 404:
+            results["rest_api"] = ("FAIL", "404 -- WP Admin -> Settings -> Permalinks -> re-save")
+        else:
+            results["rest_api"] = ("FAIL", "HTTP " + str(r.status_code))
+    except requests.exceptions.ConnectionError:
+        results["rest_api"] = ("FAIL", "DNS/connection error")
+    except Exception as e:
+        results["rest_api"] = ("FAIL", str(e)[:80])
+
+    # --- Check 3: Auth (Application Password) ---
+    try:
+        if not config.WP_USERNAME or not config.WP_APP_PASSWORD:
+            results["auth"] = ("FAIL", "WP_USERNAME or WP_APP_PASSWORD not set in .env")
+        else:
+            credentials = config.WP_USERNAME + ":" + config.WP_APP_PASSWORD
+            token = base64.b64encode(credentials.encode()).decode("utf-8")
+            headers = {"Authorization": "Basic " + token}
+            r = requests.get(wp_url + "/wp-json/wp/v2/users/me", headers=headers, timeout=15)
+            if r.status_code == 200:
+                user_data = r.json()
+                auth_user = user_data.get("name", user_data.get("slug", "unknown"))
+                results["auth"] = ("OK", "user: " + auth_user)
+            elif r.status_code == 401:
+                results["auth"] = ("FAIL", "401 Unauthorized -- check WP_APP_PASSWORD in .env")
+            elif r.status_code == 403:
+                results["auth"] = ("FAIL", "403 Forbidden -- Application Passwords may be disabled")
+            else:
+                results["auth"] = ("FAIL", "HTTP " + str(r.status_code))
+    except requests.exceptions.ConnectionError:
+        results["auth"] = ("FAIL", "DNS/connection error")
+    except Exception as e:
+        results["auth"] = ("FAIL", str(e)[:80])
+
+    # --- Print results table ---
+    print("")
+    print("=" * 55)
+    print("  WealthMarg WordPress Pre-flight Check")
+    print("  Target: " + wp_url)
+    print("=" * 55)
+    label_map = {"site": "Site reachable", "rest_api": "REST API      ", "auth": "Auth          "}
+    all_ok = True
+    for key in ["site", "rest_api", "auth"]:
+        status, detail = results.get(key, ("FAIL", "not checked"))
+        label = label_map.get(key, key)
+        if status == "OK":
+            print("  [OK]   " + label + " : OK (" + detail + ")")
+        else:
+            print("  [FAIL] " + label + " : FAIL -- " + detail)
+            all_ok = False
+    print("=" * 55)
+    if all_ok:
+        print("  All checks passed!")
+    else:
+        print("  Some checks failed. See diagnosis above.")
+        if results.get("site", ("",))[0] == "FAIL":
+            print("  -> Site FAIL: DNS not propagated yet. Wait 4-8 hours after")
+            print("     changing BigRock nameservers to ns1.hostinger.com")
+        if results.get("rest_api", ("",))[0] == "FAIL":
+            print("  -> REST API FAIL: WP Admin -> Settings -> Permalinks -> re-save")
+        if results.get("auth", ("",))[0] == "FAIL":
+            print("  -> Auth FAIL: WP Admin -> Users -> profile -> Application Passwords")
+            print("     -> delete old -> create new 'AutoPublisher' -> update WP_APP_PASSWORD in .env")
+    print("=" * 55)
+    print("")
+    return all_ok
+
+
+# =============================================================================
 # Google Auth
 # =============================================================================
 def get_google_credentials():
@@ -506,6 +624,13 @@ def run_publish_workflow():
     log.info("Starting WealthMarg Publish Workflow")
     log.info("=" * 55)
 
+    # --- Pre-flight WP_URL sanity check ---
+    if TEMP_HOSTINGER_DOMAIN in config.WP_URL:
+        log.warning(
+            "WARNING: WP_URL still points to temp Hostinger domain: " + config.WP_URL
+            + " -- Update to https://www.wealthmarg.com in .env and GitHub Secrets."
+        )
+
     state_manager.start_run()
 
     try:
@@ -656,11 +781,16 @@ if __name__ == "__main__":
     parser.add_argument("--test",   action="store_true", help="Run one publish cycle now")
     parser.add_argument("--burst",  action="store_true", help="Burst 5 articles then run 1/hour")
     parser.add_argument("--report", action="store_true", help="Send daily report now")
+    parser.add_argument("--check-wp", action="store_true", help="Test WordPress connectivity and exit")
     args = parser.parse_args()
 
     if args.auth:
         get_google_credentials()
         print("✅ Authentication done! Token saved.")
+    elif args.check_wp:
+        ok = check_wordpress_connection()
+        import sys
+        sys.exit(0 if ok else 1)
     elif args.test:
         run_publish_workflow()
     elif args.report:
