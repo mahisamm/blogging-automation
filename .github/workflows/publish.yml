@@ -3,7 +3,7 @@ name: WealthMarg Auto Publisher
 on:
   schedule:
     - cron: '0 */2 * * *'  # Every 2 hours UTC (5:30, 7:30, 9:30... IST)
-  workflow_dispatch:        # Manual "Run now" button on GitHub
+  workflow_dispatch:  # Manual 'Run now' button on GitHub
 
 jobs:
   publish:
@@ -26,16 +26,24 @@ jobs:
       - name: Write Google OAuth token
         run: echo '${{ secrets.GOOGLE_TOKEN_JSON }}' > token.json
 
+      - name: Pre-flight WordPress check
+        continue-on-error: true
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USERNAME: ${{ secrets.WP_USERNAME }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+        run: python auto_publisher.py --check-wp
+
       - name: Run publisher (1 article)
         env:
-          WP_URL:              ${{ secrets.WP_URL }}
-          WP_USERNAME:         ${{ secrets.WP_USERNAME }}
-          WP_APP_PASSWORD:     ${{ secrets.WP_APP_PASSWORD }}
-          MISTRAL_API_KEY:     ${{ secrets.MISTRAL_API_KEY }}
-          GEMINI_API_KEYS:     ${{ secrets.GEMINI_API_KEYS }}
-          GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USERNAME: ${{ secrets.WP_USERNAME }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          SPREADSHEET_ID:       ${{ secrets.SPREADSHEET_ID }}
-          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python auto_publisher.py --test
