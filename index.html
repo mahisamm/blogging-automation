@@ -401,9 +401,9 @@
   };
   const STEP_SUBTITLES = {
     1: 'Google Sheets → Read pending topic',
-    2: 'Gemini AI → Write 1500+ word article',
-    3: 'Gemini AI → SEO title, description & tags',
-    4: 'Blogger API → Publish live post',
+    2: 'Mistral AI (→ Gemini fallback) → Write 1500+ word article',
+    3: 'Mistral AI (→ Gemini fallback) → SEO title, description & tags',
+    4: 'WordPress REST API → Publish live post',
     5: 'Google Sheets → Mark published & log'
   };
 
@@ -552,9 +552,9 @@
   // Initial render with empty pending steps
   renderCanvas([
     { id:1, name:'Read Pending Topic', status:'pending', details:'' },
-    { id:2, name:'Generate Article (Gemini)', status:'pending', details:'' },
+    { id:2, name:'Generate Article (AI)', status:'pending', details:'' },
     { id:3, name:'Generate SEO Metadata', status:'pending', details:'' },
-    { id:4, name:'Publish to Blogger', status:'pending', details:'' },
+    { id:4, name:'Publish to WordPress', status:'pending', details:'' },
     { id:5, name:'Update Google Sheets', status:'pending', details:'' }
   ]);
 

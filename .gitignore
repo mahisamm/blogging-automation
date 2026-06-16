@@ -2,19 +2,16 @@
 .env
 token.json
 credentials.json
+
+# Logs & runtime state
 *.log
 publisher.log
 workflow_state.json
+
+# Python cache
 __pycache__/
 *.pyc
-find_blog_id.py
-debug_blogger.py
-credentials.json
-*.log
-publisher.log
-workflow_state.json
-__pycache__/
-*.pyc
-.env
+
+# Debug/utility scripts
 find_blog_id.py
 debug_blogger.py
